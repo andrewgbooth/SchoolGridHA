@@ -1,0 +1,16 @@
+place_order:
+  target:
+    entity:
+      integration: schoolgrid
+      domain: sensor
+  fields:
+    main:
+      required: true
+      example: "Baked Potato with Baked Beans"
+      selector:
+        text:
+    dessert:
+      required: false
+      example: "Fresh Fruit"
+      selector:
+        text:
