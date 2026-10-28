@@ -40,6 +40,8 @@ async def async_setup_entry(
                     LunchSensor(coordinator, child_id, "tomorrow", 1),
                     DessertSensor(coordinator, child_id, "today", 0),
                     DessertSensor(coordinator, child_id, "tomorrow", 1),
+                    AllergenSensor(coordinator, child_id, "today", 0),
+                    AllergenSensor(coordinator, child_id, "tomorrow", 1),
                     BalanceSensor(coordinator, child_id),
                 ]
         if new:
@@ -109,6 +111,34 @@ class DessertSensor(LunchSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"date": self._day.date.isoformat()}
+
+
+class AllergenSensor(LunchSensor):
+    """Allergens for the ordered main and dessert, kept out of the dish names."""
+
+    def __init__(self, coordinator: SchoolGridCoordinator, child_id: int, key: str, offset_days: int) -> None:
+        super().__init__(coordinator, child_id, key, offset_days)
+        self._attr_unique_id = f"{child_id}_allergens_{key}"
+        self._attr_name = f"Allergens {key}"
+
+    @property
+    def native_value(self) -> str:
+        day = self._day
+        if day.status == STATUS_ORDERED:
+            return day.allergens or "None listed"
+        return STATE_TEXT[day.status]
+
+    @property
+    def icon(self) -> str:
+        day = self._day
+        if day.status == STATUS_ORDERED:
+            return "mdi:alert-circle-outline" if day.allergens else "mdi:check-circle-outline"
+        return ICONS[day.status]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        day = self._day
+        return {"date": day.date.isoformat(), "lunch": day.main_allergens, "dessert": day.dessert_allergens}
 
 
 class BalanceSensor(ChildEntity, SensorEntity):
