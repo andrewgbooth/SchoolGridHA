@@ -29,7 +29,7 @@ integration that logs in. If SchoolGrid rejects it later, Home Assistant asks yo
 - `No school` is shown on weekends and school holidays. These never count as a missing order.
 - The dessert has its own sensors so it shows on dashboards without opening attributes. The lunch sensors
   also carry it as the `dessert` attribute, plus `date` and `status` (`ordered`, `not_ordered`, `holiday`, `no_menu`).
-- Allergen text that SchoolGrid appends to a dish name in brackets, e.g. `Cheese Roll (Milk, Wheat)`, is removed
+- Allergen text in brackets anywhere in a dish name, e.g. `Chicken (Wheat) Curry (Milk)`, is removed
   from the lunch/dessert sensors and shown on the allergen sensors instead (with `lunch` and `dessert` attributes).
 - The missing-orders sensor lists the affected days in its `dates` attribute.
 - Data refreshes every 30 minutes and again just after midnight, when "today" and "tomorrow" move on.

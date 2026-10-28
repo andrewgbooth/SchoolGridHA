@@ -90,6 +90,8 @@ def test_allergens_split_from_dish_names():
     assert split_allergens("Cheese Roll (Milk, Wheat) ") == ("Cheese Roll", "Milk, Wheat")
     assert split_allergens("Salad") == ("Salad", None)
     assert split_allergens("(Milk)") == ("(Milk)", None)
+    assert split_allergens("Chicken (Wheat) Curry (Milk, Celery) with Rice") == (
+        "Chicken Curry with Rice", "Wheat, Milk, Celery")
     menus = [{"orderDay": "2026-11-02T00:00:00", "serviceMealOrderDay": [{"serviceName": "Lunch", "courses": [
         {"courseName": "Mains", "dishes": [{"recipeId": 1, "recipeName": "Cheese Roll (Milk, Wheat)"}]},
         {"courseName": "Desserts", "dishes": [{"recipeId": 2, "recipeName": "Yogurt (Milk)"}]},

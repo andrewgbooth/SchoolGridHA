@@ -38,16 +38,24 @@ class DayInfo:
         return ", ".join(found) or None
 
 
-_TRAILING_BRACKETS = re.compile(r"\s*\(([^()]*)\)\s*$")
+_BRACKETS = re.compile(r"\(([^()]*)\)")
 
 
 def split_allergens(name: str) -> tuple[str, str | None]:
-    """Split "Cheese Roll (Milk, Wheat)" into ("Cheese Roll", "Milk, Wheat")."""
-    name = name.strip()
-    m = _TRAILING_BRACKETS.search(name)
-    if not m or not m.start():
-        return name, None
-    return name[: m.start()].strip(), m.group(1).strip() or None
+    """Pull every bracketed group out of a dish name.
+
+    "Chicken (Wheat) Curry (Milk, Celery)" becomes ("Chicken Curry", "Wheat, Milk, Celery").
+    """
+    found: list[str] = []
+    for group in _BRACKETS.findall(name):
+        for item in group.split(","):
+            item = item.strip()
+            if item and item.lower() not in (f.lower() for f in found):
+                found.append(item)
+    clean = re.sub(r"\s+", " ", _BRACKETS.sub(" ", name)).strip()
+    if not clean:
+        return name.strip(), None
+    return clean, ", ".join(found) or None
 
 
 def parse_children(accounts: dict) -> list[Child]:
