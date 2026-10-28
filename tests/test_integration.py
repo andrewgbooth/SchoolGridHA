@@ -49,12 +49,18 @@ async def test_both_days_ordered_with_dessert(hass: HomeAssistant, freezer, api)
     assert tomorrow.attributes["dessert"] == "Fresh Fruit"
     assert missing.state == "off"
     assert hass.states.get("sensor.theodore_booth_food_balance").state == "0.0"
+    # the dessert is its own entity, not just an attribute
+    assert hass.states.get("sensor.theodore_booth_dessert_today").state == "No dessert"
+    assert hass.states.get("sensor.theodore_booth_dessert_tomorrow").state == "Fresh Fruit"
+    assert hass.states.get("sensor.theodore_booth_dessert_tomorrow").attributes["date"] == "2026-11-03"
+    assert hass.states.get("sensor.theodore_booth_dessert_tomorrow").attributes["icon"] == "mdi:cupcake"
 
 
 async def test_nothing_ordered_flags_today_and_tomorrow(hass, freezer, api):
     await setup(hass, freezer, "2026-11-04 12:00:00+00:00")  # Wednesday
     today, tomorrow, missing = read(hass)
     assert today.state == tomorrow.state == "Not ordered"
+    assert hass.states.get("sensor.theodore_booth_dessert_today").state == "Not ordered"
     assert missing.state == "on"
     assert missing.attributes["dates"] == ["2026-11-04", "2026-11-05"]
 
@@ -71,6 +77,8 @@ async def test_weekend_is_no_school_and_not_missing(hass, freezer, api):
     await setup(hass, freezer, "2026-11-07 12:00:00+00:00")  # Saturday
     today, tomorrow, missing = read(hass)
     assert today.state == tomorrow.state == "No school"
+    assert hass.states.get("sensor.theodore_booth_dessert_today").state == "No school"
+    assert hass.states.get("sensor.theodore_booth_dessert_tomorrow").state == "No school"
     assert missing.state == "off"
 
 
@@ -128,3 +136,16 @@ async def test_config_flow(hass, api):
     assert r["type"] is FlowResultType.CREATE_ENTRY
     assert r["data"] == {"username": "me@x.com", "password": "good"}
     assert r["result"].unique_id == "1378505"
+
+
+def test_brand_images_ship_with_the_integration():
+    """HA serves custom-integration brand images from <integration>/brand/ (icon + logo, with @2x)."""
+    from pathlib import Path
+    from PIL import Image
+    brand = Path(__file__).parent.parent / "custom_components" / "schoolgrid" / "brand"
+    sizes = {"icon.png": (256, 256), "icon@2x.png": (512, 512)}
+    for name, size in sizes.items():
+        assert Image.open(brand / name).size == size
+    for name, height in (("logo.png", 256), ("logo@2x.png", 512)):
+        assert Image.open(brand / name).height == height
+    assert all(Image.open(brand / n).mode == "RGBA" for n in (*sizes, "logo.png", "logo@2x.png"))

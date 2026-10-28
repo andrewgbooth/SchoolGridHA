@@ -1,4 +1,4 @@
-"""Sensors per child: lunch today, lunch tomorrow, and the food balance."""
+"""Sensors per child: lunch and dessert for today and tomorrow, and the food balance."""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -38,6 +38,8 @@ async def async_setup_entry(
                 new += [
                     LunchSensor(coordinator, child_id, "today", 0),
                     LunchSensor(coordinator, child_id, "tomorrow", 1),
+                    DessertSensor(coordinator, child_id, "today", 0),
+                    DessertSensor(coordinator, child_id, "tomorrow", 1),
                     BalanceSensor(coordinator, child_id),
                 ]
         if new:
@@ -80,6 +82,33 @@ class LunchSensor(ChildEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         day = self._day
         return {"date": day.date.isoformat(), "status": day.status, "dessert": day.dessert}
+
+
+class DessertSensor(LunchSensor):
+    """The dessert as its own entity so it shows on dashboards without opening the attributes."""
+
+    def __init__(self, coordinator: SchoolGridCoordinator, child_id: int, key: str, offset_days: int) -> None:
+        super().__init__(coordinator, child_id, key, offset_days)
+        self._attr_unique_id = f"{child_id}_dessert_{key}"
+        self._attr_name = f"Dessert {key}"
+
+    @property
+    def native_value(self) -> str:
+        day = self._day
+        if day.status == STATUS_ORDERED:
+            return day.dessert or "No dessert"
+        return STATE_TEXT[day.status]
+
+    @property
+    def icon(self) -> str:
+        day = self._day
+        if day.status == STATUS_ORDERED:
+            return "mdi:cupcake" if day.dessert else "mdi:food-off-outline"
+        return ICONS[day.status]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"date": self._day.date.isoformat()}
 
 
 class BalanceSensor(ChildEntity, SensorEntity):
