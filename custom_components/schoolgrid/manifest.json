@@ -3,8 +3,8 @@
   "name": "SchoolGrid School Lunches",
   "codeowners": [],
   "config_flow": true,
-  "documentation": "https://github.com/your-user/schoolgrid-ha",
-  "issue_tracker": "https://github.com/your-user/schoolgrid-ha/issues",
+  "documentation": "https://github.com/andrewgbooth/SchoolGridHA",
+  "issue_tracker": "https://github.com/andrewgbooth/SchoolGridHA/issues",
   "iot_class": "cloud_polling",
   "requirements": [],
   "version": "0.1.0"
