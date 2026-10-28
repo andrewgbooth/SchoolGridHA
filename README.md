@@ -1,61 +1,56 @@
 # SchoolGrid School Lunches for Home Assistant
 
-Shows what your child has ordered for school lunch, day by day, and lets you place orders from
-Home Assistant. Works with parent accounts on app.schoolgrid.co.uk. It uses the website's own
-(unofficial) API, so it could break if SchoolGrid changes their site.
+Shows what your child has ordered for school lunch **today** and **tomorrow**, and warns you when an
+order is missing. **Read-only**: it never places, changes or cancels an order. It works with parent
+accounts on app.schoolgrid.co.uk and uses the website's own (unofficial) API, so it could break if
+SchoolGrid change their site.
 
 ## Install
-- **HACS:** add this repo as a custom repository (type *Integration*), install, restart.
+- **HACS:** add `https://github.com/andrewgbooth/SchoolGridHA` as a custom repository (type *Integration*),
+  install, restart Home Assistant.
 - **Manual:** copy `custom_components/schoolgrid` into `/config/custom_components/`, restart.
 
-Then *Settings → Devices & services → Add integration → SchoolGrid* and enter your SchoolGrid
-email and password. The password is stored in Home Assistant's config entry (`.storage`), like any
-integration that logs in. If it is ever rejected, HA asks you to re-enter it.
+Then *Settings → Devices & services → Add integration → SchoolGrid* and enter your SchoolGrid email
+and password. The password is stored in Home Assistant's config entry (`.storage`), like any
+integration that logs in. If SchoolGrid rejects it later, Home Assistant asks you to re-enter it.
 
-## Entities (per child, one device each)
+## Entities (one device per child)
 | Entity | State |
 |---|---|
-| `sensor.<child>_lunch_this_monday` … `_friday` | the ordered main, or `Not ordered` / `No order` (past) / `No school` / `No menu yet` |
-| `sensor.<child>_lunch_next_monday` … `_friday` | same, for next week (*Configure* → weeks 1-4; +2w, +3w for later weeks) |
+| `sensor.<child>_lunch_today` | the ordered main course, or `Not ordered` / `No school` |
+| `sensor.<child>_lunch_tomorrow` | same, for tomorrow |
 | `sensor.<child>_food_balance` | account balance (GBP) |
-| `binary_sensor.<child>_lunch_orders_missing` | on if any *future* school day with a menu has no order |
+| `binary_sensor.<child>_lunch_orders_missing` | on if today or tomorrow is a school day with no order |
 
-"This week" rolls to the following week on Saturday. Day sensor attributes: `date`, `status`,
-`dessert`, `order_id`, `can_order`, `main_options`, `dessert_options`. Data refreshes every 30 minutes
-and just after midnight.
+- `No school` is shown on weekends and school holidays. These never count as a missing order.
+- The lunch sensors have attributes `dessert` (the chosen dessert, or empty), `date` and `status`
+  (`ordered`, `not_ordered`, `holiday`, `no_menu`).
+- The missing-orders sensor lists the affected days in its `dates` attribute.
+- Data refreshes every 30 minutes and again just after midnight, when "today" and "tomorrow" move on.
 
-## Placing an order
-Service `schoolgrid.place_order`, targeted at a day sensor. `main` (and optional `dessert`) match a
-name from `main_options` / `dessert_options`, or part of one. Main and dessert must be ordered
-together. **It can only place orders: it refuses if the day already has one, and there is no way to
-change or cancel from Home Assistant** (do that on the website). Sold-out dishes and dishes that need a
-sub-choice are refused.
-
-```yaml
-action: schoolgrid.place_order
-target:
-  entity_id: sensor.theodore_booth_lunch_next_wednesday
-data:
-  main: Baked Potato with Baked Beans
-  dessert: Fresh Fruit
-```
-
-## Example: Sunday reminder
+## Example: remind me in the evening
 ```yaml
 triggers:
   - trigger: time
     at: "18:00"
 conditions:
-  - condition: time
-    weekday: [sun]
   - condition: state
     entity_id: binary_sensor.theodore_booth_lunch_orders_missing
     state: "on"
 actions:
   - action: notify.mobile_app_phone
     data:
-      message: "School lunches not ordered for {{ state_attr('binary_sensor.theodore_booth_lunch_orders_missing','dates') | join(', ') }}"
+      message: >
+        School lunch not ordered for
+        {{ state_attr('binary_sensor.theodore_booth_lunch_orders_missing', 'dates') | join(', ') }}
 ```
 
+## Upgrading from 0.1
+0.1 had per-weekday sensors and an ordering service. 0.2 replaces them with the entities above and no
+longer has any ordering. Delete the old `sensor.*_lunch_this_*` / `*_lunch_next_*` entities after upgrading.
+
 ## Development
-`uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python pytest-homeassistant-custom-component && .venv/bin/python -m pytest`
+```
+uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python pytest-homeassistant-custom-component
+.venv/bin/python -m pytest
+```

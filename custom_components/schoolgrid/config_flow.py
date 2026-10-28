@@ -1,4 +1,4 @@
-"""Config flow: username/password, reauth, and a weeks-ahead option."""
+"""Config flow: username/password, and re-authentication."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -6,14 +6,12 @@ from typing import Any
 
 import aiohttp
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-from homeassistant.helpers.selector import NumberSelector, NumberSelectorConfig, NumberSelectorMode
 
 from .api import AuthError, SchoolGridApi, SchoolGridError
-from .const import CONF_WEEKS, DEFAULT_WEEKS, DOMAIN
+from .const import DOMAIN
 
 CREDENTIALS = vol.Schema({vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str})
 
@@ -64,23 +62,3 @@ class SchoolGridConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"username": entry.data[CONF_USERNAME]},
             errors=errors,
         )
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        return SchoolGridOptionsFlow()
-
-
-class SchoolGridOptionsFlow(OptionsFlow):
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            return self.async_create_entry(data={CONF_WEEKS: int(user_input[CONF_WEEKS])})
-        current = self.config_entry.options.get(CONF_WEEKS, DEFAULT_WEEKS)
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_WEEKS, default=current): NumberSelector(
-                    NumberSelectorConfig(min=1, max=4, step=1, mode=NumberSelectorMode.BOX)
-                )
-            }
-        )
-        return self.async_show_form(step_id="init", data_schema=schema)

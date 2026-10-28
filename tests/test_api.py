@@ -31,7 +31,7 @@ async def site(socket_enabled):
 
     async def data(req):
         if req.cookies.get("auth") in state["valid"]:
-            return web.json_response({"ok": True, "method": req.method})
+            return web.json_response({"ok": True})
         return web.Response(status=302, headers={"Location": "/login.aspx?ReturnUrl=%2F"})
 
     app = web.Application()
@@ -64,13 +64,17 @@ async def test_logs_in_lazily_and_reuses_session(site):
     await session.close()
 
 
-async def test_relogs_in_after_expiry_including_posts(site):
+async def test_relogs_in_after_expiry(site):
     session, api = await make()
     await api.accounts()
     site["valid"].clear()
-    assert (await api.insert_order({"a": 1}))["method"] == "POST"
+    assert (await api.orders(1, "2026-11-02", "2026-11-03"))["ok"]
     assert site["logins"] == 2
     await session.close()
+
+
+async def test_client_is_read_only():
+    assert not [n for n in dir(SchoolGridApi) if any(w in n for w in ("insert", "delete", "cancel", "post", "order_"))]
 
 
 async def test_bad_password_raises_auth_error(site):

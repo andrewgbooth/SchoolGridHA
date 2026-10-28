@@ -1,4 +1,4 @@
-"""SchoolGrid School Lunches: one sensor per child per school day showing what has been ordered."""
+"""SchoolGrid School Lunches: what has been ordered for school lunch today and tomorrow (read-only)."""
 from __future__ import annotations
 
 import aiohttp
@@ -26,17 +26,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: SchoolGridConfigEntry) -
 
     @callback
     def _new_day(_now) -> None:
-        # Roll "today"/"past"/weekend-to-next-week state over at midnight without waiting for the poll.
+        # "Today" and "tomorrow" move on at midnight; refresh then rather than waiting for the next poll.
         hass.async_create_task(coordinator.async_request_refresh())
 
     entry.async_on_unload(async_track_time_change(hass, _new_day, hour=0, minute=5, second=0))
-    entry.async_on_unload(entry.add_update_listener(_reload_on_options))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
-
-
-async def _reload_on_options(hass: HomeAssistant, entry: SchoolGridConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: SchoolGridConfigEntry) -> bool:

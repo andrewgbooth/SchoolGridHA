@@ -5,7 +5,6 @@ import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.schoolgrid.api import AuthError
@@ -13,22 +12,19 @@ from custom_components.schoolgrid.const import DOMAIN
 
 from . import data
 
-NOW = "2026-10-28 12:00:00+00:00"  # Wednesday of half term
 P = "custom_components.schoolgrid.api.SchoolGridApi"
 
 
 @pytest.fixture
 def api():
     with patch(f"{P}.accounts", AsyncMock(return_value=data.ACCOUNTS)) as acc, \
-         patch(f"{P}.menus", AsyncMock(side_effect=lambda cid, s, e: data.menus(s, e))), \
-         patch(f"{P}.orders", AsyncMock(side_effect=lambda cid, s, e: [o for o in data.ORDERS if s <= o["mealDate"][:10] <= e])) as orders, \
-         patch(f"{P}.service_types", AsyncMock(return_value=[{"id": 3632, "clientServiceTypeId": 10}])), \
-         patch(f"{P}.insert_order", AsyncMock(return_value={"orderId": 9, "isSoldOut": False})) as insert:
-        yield type("Api", (), {"accounts": acc, "orders": orders, "insert": insert})
+         patch(f"{P}.menus", AsyncMock(side_effect=lambda cid, s, e: data.menus(s, e))) as menus, \
+         patch(f"{P}.orders", AsyncMock(side_effect=lambda cid, s, e: [o for o in data.ORDERS if s <= o["mealDate"][:10] <= e])):
+        yield type("Api", (), {"accounts": acc, "menus": menus})
 
 
-async def setup(hass, freezer):
-    freezer.move_to(NOW)
+async def setup(hass, freezer, now):
+    freezer.move_to(now)
     entry = MockConfigEntry(domain=DOMAIN, unique_id="1378505", data={"username": "me@x.com", "password": "pw"})
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
@@ -36,77 +32,86 @@ async def setup(hass, freezer):
     return entry
 
 
-async def test_states(hass: HomeAssistant, freezer, api):
-    entry = await setup(hass, freezer)
+def read(hass):
+    g = lambda e: hass.states.get(e)
+    return (g("sensor.theodore_booth_lunch_today"), g("sensor.theodore_booth_lunch_tomorrow"),
+            g("binary_sensor.theodore_booth_lunch_orders_missing"))
+
+
+async def test_both_days_ordered_with_dessert(hass: HomeAssistant, freezer, api):
+    entry = await setup(hass, freezer, "2026-11-02 12:00:00+00:00")  # Monday
     assert entry.state is ConfigEntryState.LOADED
-    s = lambda e: hass.states.get(f"sensor.theodore_booth_{e}")
-    assert s("lunch_next_monday").state == "Baked Potato with Baked Beans"
-    assert s("lunch_next_monday").attributes["date"] == "2026-11-02"
-    assert s("lunch_next_tuesday").attributes["dessert"] == "Fresh Fruit"
-    assert s("lunch_this_wednesday").state == "No school"          # half-term holiday flag
-    assert s("lunch_next_wednesday").state == "Not ordered"
-    assert s("lunch_next_wednesday").attributes["can_order"] is True
-    # sold-out and sub-choice dishes are not offered
-    assert s("lunch_next_wednesday").attributes["main_options"] == [
-        "Baked Potato with Baked Beans", "Baked Potato with Baked Beans & Cheese"]
-    assert s("food_balance").state == "0.0"
-    b = hass.states.get("binary_sensor.theodore_booth_lunch_orders_missing")
-    assert b.state == "on"
-    assert b.attributes["dates"] == ["2026-11-04", "2026-11-05", "2026-11-06"]
-    # 20 weekday sensors? 2 weeks x 5 = 10 day sensors + balance
-    assert len([x for x in hass.states.async_entity_ids("sensor") if "lunch_" in x]) == 10
+    today, tomorrow, missing = read(hass)
+    assert today.state == "Baked Potato with Baked Beans"
+    assert today.attributes["dessert"] is None
+    assert today.attributes["date"] == "2026-11-02"
+    assert tomorrow.state == "Baked Potato with Baked Beans"
+    assert tomorrow.attributes["dessert"] == "Fresh Fruit"
+    assert missing.state == "off"
+    assert hass.states.get("sensor.theodore_booth_food_balance").state == "0.0"
 
 
-async def test_weekend_rolls_to_next_week(hass, freezer, api):
-    freezer.move_to("2026-10-31 12:00:00+00:00")
-    entry = MockConfigEntry(domain=DOMAIN, unique_id="1378505", data={"username": "u", "password": "p"})
-    entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.theodore_booth_lunch_this_monday").attributes["date"] == "2026-11-02"
+async def test_nothing_ordered_flags_today_and_tomorrow(hass, freezer, api):
+    await setup(hass, freezer, "2026-11-04 12:00:00+00:00")  # Wednesday
+    today, tomorrow, missing = read(hass)
+    assert today.state == tomorrow.state == "Not ordered"
+    assert missing.state == "on"
+    assert missing.attributes["dates"] == ["2026-11-04", "2026-11-05"]
 
 
-async def test_place_order(hass, freezer, api):
-    await setup(hass, freezer)
-    await hass.services.async_call(
-        DOMAIN, "place_order", {"entity_id": "sensor.theodore_booth_lunch_next_wednesday", "main": "beans & cheese", "dessert": "yogurt"},
-        blocking=True)
-    payload = api.insert.call_args.args[0]
-    assert payload == {
-        "id": 0, "customerId": 1467173, "mealDate": "2026-11-04T00:00:00", "mainCourseId": 96662, "dessertId": 99369,
-        "customOrder": None, "menuAssignmentId": 33123, "isLocked": True, "schoolServiceTypeId": 3632,
-        "schoolId": 3877, "yearId": 1}
+async def test_friday_tomorrow_is_weekend(hass, freezer, api):
+    await setup(hass, freezer, "2026-11-06 12:00:00+00:00")
+    today, tomorrow, missing = read(hass)
+    assert today.state == "Not ordered"
+    assert tomorrow.state == "No school"
+    assert missing.attributes["dates"] == ["2026-11-06"]       # the weekend never counts
 
 
-@pytest.mark.parametrize("entity,main,msg", [
-    ("lunch_next_monday", "Cheese Roll", "already has an order"),            # no changing orders
-    ("lunch_this_wednesday", "Baked Potato with Baked Beans", "No lunch service"),
-    ("lunch_next_wednesday", "Cheese Roll with Nachos", "sold out"),
-    ("lunch_next_wednesday", "Build your own wrap", "sub-choice"),
-    ("lunch_next_wednesday", "pizza", "not found"),
-    ("lunch_next_wednesday", "baked potato", "ambiguous"),
-])
-async def test_place_order_refusals(hass, freezer, api, entity, main, msg):
-    await setup(hass, freezer)
-    with pytest.raises(ServiceValidationError, match=msg):
-        await hass.services.async_call(
-            DOMAIN, "place_order", {"entity_id": f"sensor.theodore_booth_{entity}", "main": main}, blocking=True)
-    api.insert.assert_not_called()
+async def test_weekend_is_no_school_and_not_missing(hass, freezer, api):
+    await setup(hass, freezer, "2026-11-07 12:00:00+00:00")  # Saturday
+    today, tomorrow, missing = read(hass)
+    assert today.state == tomorrow.state == "No school"
+    assert missing.state == "off"
 
 
-async def test_refuses_if_ordered_elsewhere_since_last_poll(hass, freezer, api):
-    await setup(hass, freezer)
-    api.orders.side_effect = lambda *a: [{"preorderId": 1}]
-    with pytest.raises(ServiceValidationError, match="already has an order"):
-        await hass.services.async_call(
-            DOMAIN, "place_order", {"entity_id": "sensor.theodore_booth_lunch_next_wednesday", "main": "Baked Potato with Baked Beans"},
-            blocking=True)
-    api.insert.assert_not_called()
+async def test_weekend_is_no_school_even_if_api_has_a_menu(hass, freezer, api):
+    api.menus.side_effect = lambda cid, s, e: [data.day(__import__("datetime").date.fromisoformat(s)),
+                                                data.day(__import__("datetime").date.fromisoformat(e))]
+    await setup(hass, freezer, "2026-11-07 12:00:00+00:00")
+    today, tomorrow, _ = read(hass)
+    assert today.state == tomorrow.state == "No school"
+
+
+async def test_school_holiday(hass, freezer, api):
+    await setup(hass, freezer, "2026-10-28 12:00:00+00:00")  # half term
+    today, tomorrow, missing = read(hass)
+    assert today.state == tomorrow.state == "No school"
+    assert missing.state == "off"
+
+
+async def test_rolls_over_at_midnight(hass, freezer, api):
+    from datetime import timedelta
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+    await setup(hass, freezer, "2026-11-02 12:00:00-08:00")
+    assert read(hass)[0].attributes["date"] == "2026-11-02"
+    from datetime import datetime
+    local = datetime(2026, 11, 3, 0, 5, 0, tzinfo=dt_util.get_default_time_zone())  # refresh is at 00:05 local time
+    freezer.move_to(local)
+    async_fire_time_changed(hass, local)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert read(hass)[0].attributes["date"] == "2026-11-03"
+    assert read(hass)[0].attributes["dessert"] == "Fresh Fruit"
+
+
+async def test_no_services_registered(hass, freezer, api):
+    await setup(hass, freezer, "2026-11-02 12:00:00+00:00")
+    assert not hass.services.async_services_for_domain(DOMAIN)
 
 
 async def test_auth_failure_starts_reauth(hass, freezer, api):
     api.accounts.side_effect = AuthError("bad")
-    entry = await setup(hass, freezer)
+    entry = await setup(hass, freezer, "2026-11-02 12:00:00+00:00")
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert any(f["context"]["source"] == "reauth" for f in hass.config_entries.flow.async_progress())
 

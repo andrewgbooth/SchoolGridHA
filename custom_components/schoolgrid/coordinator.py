@@ -13,8 +13,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import AuthError, SchoolGridApi, SchoolGridError
-from .const import CONF_WEEKS, DEFAULT_WEEKS, DOMAIN, SCAN_INTERVAL
-from .model import Child, DayInfo, parse_children, parse_days, week_start
+from .const import DOMAIN, SCAN_INTERVAL
+from .model import Child, DayInfo, parse_children, parse_days
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,6 @@ class ChildData:
 @dataclass
 class SchoolGridData:
     today: date
-    start: date  # Monday of the first week shown
     children: dict[int, ChildData]
 
 
@@ -37,27 +36,21 @@ class SchoolGridCoordinator(DataUpdateCoordinator[SchoolGridData]):
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = api
 
-    @property
-    def weeks(self) -> int:
-        return int(self.config_entry.options.get(CONF_WEEKS, DEFAULT_WEEKS))
-
     async def _async_update_data(self) -> SchoolGridData:
         today = dt_util.now().date()
-        start = week_start(today)
-        end = start + timedelta(days=7 * self.weeks - 1)
+        start, end = today.isoformat(), (today + timedelta(days=1)).isoformat()
         try:
             children = parse_children(await self.api.accounts())
 
             async def load(child: Child) -> ChildData:
                 menus, orders = await asyncio.gather(
-                    self.api.menus(child.id, start.isoformat(), end.isoformat()),
-                    self.api.orders(child.id, start.isoformat(), end.isoformat()),
+                    self.api.menus(child.id, start, end), self.api.orders(child.id, start, end)
                 )
-                return ChildData(child, parse_days(menus, orders, today))
+                return ChildData(child, parse_days(menus, orders))
 
             loaded = await asyncio.gather(*(load(c) for c in children))
         except AuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except SchoolGridError as err:
             raise UpdateFailed(str(err)) from err
-        return SchoolGridData(today, start, {c.child.id: c for c in loaded})
+        return SchoolGridData(today, {c.child.id: c for c in loaded})

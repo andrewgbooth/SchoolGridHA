@@ -4,12 +4,17 @@
       "user": {
         "title": "SchoolGrid",
         "description": "Log in with the account you use at app.schoolgrid.co.uk.",
-        "data": { "username": "Email / username", "password": "Password" }
+        "data": {
+          "username": "Email / username",
+          "password": "Password"
+        }
       },
       "reauth_confirm": {
         "title": "Log in to SchoolGrid again",
         "description": "SchoolGrid rejected the saved password for {username}.",
-        "data": { "password": "Password" }
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -19,24 +24,6 @@
     "abort": {
       "already_configured": "This SchoolGrid account is already set up.",
       "reauth_successful": "Re-authentication was successful."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "SchoolGrid options",
-        "data": { "weeks": "Weeks to show (1-4, starting this week)" }
-      }
-    }
-  },
-  "services": {
-    "place_order": {
-      "name": "Place lunch order",
-      "description": "Orders lunch for the selected day. Cannot change or cancel an existing order.",
-      "fields": {
-        "main": { "name": "Main", "description": "Name (or part of the name) of the main course; see the sensor's main_options." },
-        "dessert": { "name": "Dessert", "description": "Optional dessert. Must be ordered together with the main." }
-      }
     }
   }
 }

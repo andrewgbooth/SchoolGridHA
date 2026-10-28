@@ -1,7 +1,7 @@
 """Async client for the SchoolGrid parent web app (app.schoolgrid.co.uk).
 
 The site is an ASP.NET WebForms login followed by an Angular SPA that uses a JSON API under /api.
-There is deliberately no method for cancelling or changing an order.
+This client is read-only: it has no method that places, changes or cancels an order.
 """
 from __future__ import annotations
 
@@ -77,14 +77,12 @@ class SchoolGridApi:
                 raise AuthError("SchoolGrid rejected the username or password")
             self._logged_in = True
 
-    async def _request(self, method: str, path: str, *, body: Any = None, retry: bool = True) -> Any:
+    async def _request(self, path: str, *, retry: bool = True) -> Any:
         if not self._logged_in:
             await self.login()
         try:
-            async with self._session.request(
-                method,
+            async with self._session.get(
                 BASE_URL + path,
-                json=body,
                 headers={"Accept": "application/json"},
                 allow_redirects=False,
                 timeout=aiohttp.ClientTimeout(total=30),
@@ -96,25 +94,17 @@ class SchoolGridApi:
                     return json.loads(text) if text else None
         except (aiohttp.ClientError, TimeoutError) as err:
             raise SchoolGridError(f"Request to SchoolGrid failed: {err}") from err
-        # Session expired: log in again and retry once (nothing was processed, so POSTs are safe to repeat).
+        # Session expired: log in again and retry once.
         if not retry:
             raise AuthError("SchoolGrid still rejects the session after logging in")
         await self.login()
-        return await self._request(method, path, body=body, retry=False)
+        return await self._request(path, retry=False)
 
     async def accounts(self) -> dict:
-        return await self._request("GET", "/api/Parent/GetCurrentUserAndAccounts")
+        return await self._request("/api/Parent/GetCurrentUserAndAccounts")
 
     async def menus(self, customer_id: int, start: str, end: str) -> list[dict]:
-        return await self._request("GET", f"/api/MealOrder/GetCustomerMenus/{customer_id}/{start}/{end}/true")
+        return await self._request(f"/api/MealOrder/GetCustomerMenus/{customer_id}/{start}/{end}/true")
 
     async def orders(self, customer_id: int, start: str, end: str) -> list[dict]:
-        return await self._request("GET", f"/api/MealOrder/GetCustomerMealOrders/{customer_id}/{start}/{end}")
-
-    async def service_types(self, school_id: int, client_id: int) -> list[dict]:
-        return await self._request(
-            "GET", f"/api/MealServiceType/GetSchoolServiceTypesForSchoolAccountOrder/{school_id}/{client_id}"
-        )
-
-    async def insert_order(self, payload: dict) -> dict:
-        return await self._request("POST", "/api/MealOrder/Insert", body=payload)
+        return await self._request(f"/api/MealOrder/GetCustomerMealOrders/{customer_id}/{start}/{end}")
