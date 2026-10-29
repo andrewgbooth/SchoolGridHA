@@ -11,7 +11,7 @@ from homeassistant.helpers.event import async_track_time_change
 from .api import SchoolGridApi
 from .coordinator import SchoolGridCoordinator
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 type SchoolGridConfigEntry = ConfigEntry[SchoolGridCoordinator]
 
