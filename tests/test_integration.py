@@ -124,9 +124,16 @@ async def test_refresh_button_is_rate_limited(hass, freezer, api):
     with pytest.raises(HomeAssistantError):
         await press()
     assert api.accounts.await_count == calls + 1
+    # update_entity shares the same cooldown
+    from homeassistant.setup import async_setup_component
+    await async_setup_component(hass, "homeassistant", {})
+    await hass.services.async_call("homeassistant", "update_entity", {"entity_id": "sensor.theodore_booth_lunch_today"}, blocking=True)
+    assert api.accounts.await_count == calls + 1
     freezer.tick(timedelta(seconds=61))
-    await press()
+    await hass.services.async_call("homeassistant", "update_entity", {"entity_id": "sensor.theodore_booth_lunch_today"}, blocking=True)
     assert api.accounts.await_count == calls + 2
+    with pytest.raises(HomeAssistantError):          # ...and that refresh started a new cooldown
+        await press()
 
 
 async def test_no_services_registered(hass, freezer, api):

@@ -37,14 +37,27 @@ class SchoolGridCoordinator(DataUpdateCoordinator[SchoolGridData]):
         self.api = api
         self._last_manual_refresh = None
 
+    def _cooldown_left(self) -> int:
+        """Seconds until another on-demand refresh is allowed (0 if allowed now)."""
+        if not self._last_manual_refresh:
+            return 0
+        left = MANUAL_REFRESH_COOLDOWN - (dt_util.utcnow() - self._last_manual_refresh)
+        return max(0, int(left.total_seconds()) + 1) if left.total_seconds() > 0 else 0
+
     async def async_manual_refresh(self) -> None:
-        """Refresh on demand, at most once per cooldown so the button can't hammer SchoolGrid."""
-        now = dt_util.utcnow()
-        if self._last_manual_refresh and now - self._last_manual_refresh < MANUAL_REFRESH_COOLDOWN:
-            wait = int((MANUAL_REFRESH_COOLDOWN - (now - self._last_manual_refresh)).total_seconds()) + 1
+        """Refresh on demand (the button), at most once per cooldown so it can't hammer SchoolGrid."""
+        if wait := self._cooldown_left():
             raise HomeAssistantError(f"SchoolGrid was refreshed manually a moment ago; try again in {wait}s")
-        self._last_manual_refresh = now
+        self._last_manual_refresh = dt_util.utcnow()
         await self.async_refresh()
+
+    async def async_request_refresh(self) -> None:
+        """Other on-demand refreshes (e.g. homeassistant.update_entity) share the button's cooldown."""
+        if self._cooldown_left():
+            _LOGGER.debug("Ignoring refresh request during the manual refresh cooldown")
+            return
+        self._last_manual_refresh = dt_util.utcnow()
+        await super().async_request_refresh()
 
     async def _async_update_data(self) -> SchoolGridData:
         today = dt_util.now().date()
