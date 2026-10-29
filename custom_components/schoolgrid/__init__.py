@@ -11,7 +11,7 @@ from homeassistant.helpers.event import async_track_time_change
 from .api import SchoolGridApi
 from .coordinator import SchoolGridCoordinator
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 type SchoolGridConfigEntry = ConfigEntry[SchoolGridCoordinator]
 
@@ -27,7 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: SchoolGridConfigEntry) -
     @callback
     def _new_day(_now) -> None:
         # "Today" and "tomorrow" move on at midnight; refresh then rather than waiting for the next poll.
-        hass.async_create_task(coordinator.async_request_refresh())
+        # Scheduled, so it bypasses the on-demand cooldown.
+        hass.async_create_task(coordinator.async_refresh())
 
     entry.async_on_unload(async_track_time_change(hass, _new_day, hour=0, minute=5, second=0))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

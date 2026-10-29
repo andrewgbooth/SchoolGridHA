@@ -112,6 +112,30 @@ async def test_rolls_over_at_midnight(hass, freezer, api):
     assert read(hass)[0].attributes["dessert"] == "Fresh Fruit"
 
 
+async def test_refresh_button_is_rate_limited(hass, freezer, api):
+    from datetime import timedelta
+    from homeassistant.exceptions import HomeAssistantError
+    await setup(hass, freezer, "2026-11-02 12:00:00+00:00")
+    press = lambda: hass.services.async_call(
+        "button", "press", {"entity_id": "button.schoolgrid_refresh"}, blocking=True)
+    calls = api.accounts.await_count
+    await press()
+    assert api.accounts.await_count == calls + 1
+    with pytest.raises(HomeAssistantError):
+        await press()
+    assert api.accounts.await_count == calls + 1
+    # update_entity shares the same cooldown
+    from homeassistant.setup import async_setup_component
+    await async_setup_component(hass, "homeassistant", {})
+    await hass.services.async_call("homeassistant", "update_entity", {"entity_id": "sensor.theodore_booth_lunch_today"}, blocking=True)
+    assert api.accounts.await_count == calls + 1
+    freezer.tick(timedelta(seconds=61))
+    await hass.services.async_call("homeassistant", "update_entity", {"entity_id": "sensor.theodore_booth_lunch_today"}, blocking=True)
+    assert api.accounts.await_count == calls + 2
+    with pytest.raises(HomeAssistantError):          # ...and that refresh started a new cooldown
+        await press()
+
+
 async def test_no_services_registered(hass, freezer, api):
     await setup(hass, freezer, "2026-11-02 12:00:00+00:00")
     assert not hass.services.async_services_for_domain(DOMAIN)
