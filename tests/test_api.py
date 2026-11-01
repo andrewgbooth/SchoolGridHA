@@ -100,3 +100,44 @@ def test_allergens_split_from_dish_names():
     day = next(iter(parse_days(menus, orders).values()))
     assert (day.main, day.dessert) == ("Cheese Roll", "Yogurt")
     assert day.allergens == "Milk, Wheat"
+
+
+async def test_retries_transient_failures_then_succeeds(site, monkeypatch):
+    monkeypatch.setattr(api_mod, "RETRY_DELAYS", (0, 0))
+    session, api = await make()
+    real = api._request_once
+    calls = []
+
+    async def flaky(path, **kw):
+        calls.append(path)
+        if len(calls) < 3:
+            raise api_mod.SchoolGridError("blip")
+        return await real(path, **kw)
+
+    api._request_once = flaky
+    assert (await api.accounts())["ok"]
+    assert len(calls) == 3
+    await session.close()
+
+
+async def test_gives_up_with_a_non_empty_message(site, monkeypatch):
+    monkeypatch.setattr(api_mod, "RETRY_DELAYS", (0, 0))
+    session, api = await make()
+
+    class Boom:
+        def get(self, *a, **k):
+            raise TimeoutError()
+
+    api._logged_in = True
+    api._session = Boom()
+    with pytest.raises(api_mod.SchoolGridError, match="TimeoutError"):
+        await api.accounts()
+    await session.close()
+
+
+async def test_auth_errors_are_not_retried(site, monkeypatch):
+    monkeypatch.setattr(api_mod, "RETRY_DELAYS", (0, 0))
+    session, api = await make(pw="wrong")
+    with pytest.raises(AuthError):
+        await api.accounts()
+    await session.close()
