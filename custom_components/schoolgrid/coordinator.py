@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import AuthError, SchoolGridApi, SchoolGridError
-from .const import DOMAIN, MANUAL_REFRESH_COOLDOWN, SCAN_INTERVAL
+from .const import DOMAIN, MANUAL_REFRESH_COOLDOWN, SCAN_INTERVAL, STALE_DATA_MAX_AGE
 from .model import Child, DayInfo, parse_children, parse_days
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ class SchoolGridCoordinator(DataUpdateCoordinator[SchoolGridData]):
         super().__init__(hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=SCAN_INTERVAL)
         self.api = api
         self._last_manual_refresh = None
+        self._last_success = None
 
     def _cooldown_left(self) -> int:
         """Seconds until another on-demand refresh is allowed (0 if allowed now)."""
@@ -75,5 +76,16 @@ class SchoolGridCoordinator(DataUpdateCoordinator[SchoolGridData]):
         except AuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except SchoolGridError as err:
+            # Keep serving the last good data through an outage rather than flipping everything to
+            # unavailable; but never carry "today" across midnight, and give up after a few hours.
+            if (
+                self.data is not None
+                and self._last_success is not None
+                and self.data.today == today
+                and dt_util.utcnow() - self._last_success < STALE_DATA_MAX_AGE
+            ):
+                _LOGGER.warning("%s; keeping the last good data until SchoolGrid responds", err)
+                return self.data
             raise UpdateFailed(str(err)) from err
+        self._last_success = dt_util.utcnow()
         return SchoolGridData(today, {c.child.id: c for c in loaded})

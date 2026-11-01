@@ -136,6 +136,25 @@ async def test_refresh_button_is_rate_limited(hass, freezer, api):
         await press()
 
 
+async def test_outage_keeps_last_good_data_then_gives_up(hass, freezer, api):
+    from datetime import timedelta
+    from custom_components.schoolgrid.api import SchoolGridError
+    entry = await setup(hass, freezer, "2026-11-02 12:00:00+00:00")
+    assert read(hass)[1].state == "Baked Potato with Baked Beans"
+    api.accounts.side_effect = SchoolGridError("down")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert read(hass)[1].state == "Baked Potato with Baked Beans"   # still served
+    freezer.tick(timedelta(hours=7))                                # same day, but too old
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert read(hass)[1].state == "unavailable"
+    api.accounts.side_effect = None
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert read(hass)[1].state == "Baked Potato with Baked Beans"
+
+
 async def test_no_services_registered(hass, freezer, api):
     await setup(hass, freezer, "2026-11-02 12:00:00+00:00")
     assert not hass.services.async_services_for_domain(DOMAIN)

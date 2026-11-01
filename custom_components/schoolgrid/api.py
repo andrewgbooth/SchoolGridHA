@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from html.parser import HTMLParser
 from typing import Any
 
@@ -14,8 +15,20 @@ import aiohttp
 
 from .const import BASE_URL
 
+_LOGGER = logging.getLogger(__name__)
+
 LOGIN_PATH = "/login.aspx"
 _FIELD = "ctl00$ctl00$bodyContent$bodyContent$"
+
+# Pauses between attempts when SchoolGrid times out or drops the connection (so 3 attempts in all).
+RETRY_DELAYS = (2, 5)
+
+
+def _describe(err: Exception) -> str:
+    """Exception text that is never empty (TimeoutError, for one, has no message)."""
+    if isinstance(err, aiohttp.ClientResponseError):
+        return f"HTTP {err.status} {err.message}".strip()
+    return f"{type(err).__name__}: {err}".rstrip(": ")
 
 
 class SchoolGridError(Exception):
@@ -71,13 +84,26 @@ class SchoolGridApi:
                 ) as resp:
                     status, location = resp.status, resp.headers.get("Location", "")
             except (aiohttp.ClientError, TimeoutError) as err:
-                raise SchoolGridError(f"Cannot reach SchoolGrid: {err}") from err
+                raise SchoolGridError(f"Cannot reach SchoolGrid ({_describe(err)})") from err
             # Success is a redirect into the app; a 200 means the login page re-rendered with an error.
             if status not in (301, 302, 303) or "login.aspx" in location.lower():
                 raise AuthError("SchoolGrid rejected the username or password")
             self._logged_in = True
 
-    async def _request(self, path: str, *, retry: bool = True) -> Any:
+    async def _request(self, path: str) -> Any:
+        """GET a JSON path, retrying timeouts and connection errors (never auth failures)."""
+        for delay in (*RETRY_DELAYS, None):
+            try:
+                return await self._request_once(path)
+            except AuthError:
+                raise
+            except SchoolGridError as err:
+                if delay is None:
+                    raise
+                _LOGGER.debug("SchoolGrid request failed (%s); retrying in %ss", err, delay)
+                await asyncio.sleep(delay)
+
+    async def _request_once(self, path: str, *, retry: bool = True) -> Any:
         if not self._logged_in:
             await self.login()
         try:
@@ -93,12 +119,12 @@ class SchoolGridApi:
                     text = await resp.text()
                     return json.loads(text) if text else None
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise SchoolGridError(f"Request to SchoolGrid failed: {err}") from err
+            raise SchoolGridError(f"Request to SchoolGrid failed ({_describe(err)})") from err
         # Session expired: log in again and retry once.
         if not retry:
             raise AuthError("SchoolGrid still rejects the session after logging in")
         await self.login()
-        return await self._request(path, retry=False)
+        return await self._request_once(path, retry=False)
 
     async def accounts(self) -> dict:
         return await self._request("/api/Parent/GetCurrentUserAndAccounts")
